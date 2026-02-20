@@ -1,5 +1,5 @@
 // Relatório de Voo (PWA) - armazenamento local
-const APP_VERSION = "v38";
+const APP_VERSION = "v39";
 const VERSION_HISTORY = [
   "1.2.3 - Códigos de operação pré-carregados (não sobrescreve dados existentes)",
   "1.2.2 - Correção: botões/tabs voltaram a funcionar (erro JS) + VOO decimal no teclado",
@@ -864,7 +864,7 @@ function renderHistory(){
   if (dayTotalEl){
     const day = normalizeStr(document.getElementById("filterDate")?.value) || todayISO();
 
-    const listDay = entries.filter(e => e?.date === day);
+    const listDay = entries.filter(e => e?.date === day && !e?.deleted);
 
     const totalMin = listDay.reduce((acc, e) => acc + (Number(e?.fields?.tempo) || 0), 0);
 
@@ -1190,6 +1190,7 @@ async function syncPull(){
     }
 
     applyAppState(payload);
+    saveAll();
 
     // padrão: ao atualizar, mostrar o dia de hoje no histórico
     const fd = document.getElementById("filterDate");
