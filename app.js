@@ -1,5 +1,5 @@
 // Relatório de Voo (PWA) - armazenamento local
-const APP_VERSION = "1.1.5 (idb)";
+const APP_VERSION = "v37";
 const VERSION_HISTORY = [
   "1.2.3 - Códigos de operação pré-carregados (não sobrescreve dados existentes)",
   "1.2.2 - Correção: botões/tabs voltaram a funcionar (erro JS) + VOO decimal no teclado",
@@ -831,8 +831,9 @@ function getFilteredEntries(){
   const d = normalizeStr(document.getElementById("filterDate")?.value);
   const ua = normalizeStr(document.getElementById("filterUA")?.value);
 
-  const sorted = [...entries].sort((a,b) => String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
+  const sorted = [...entries].sort((a,b) => String((b.updatedAt||b.deletedAt||b.createdAt)||"").localeCompare(String((a.updatedAt||a.deletedAt||a.createdAt)||"")));
   return sorted.filter(e => {
+    if (e && e.deleted) return false;
     if (d && e.date !== d) return false;
     if (ua && normalizeStr(e.fields?.ua) !== ua) return false;
     return true;
