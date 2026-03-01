@@ -14,6 +14,7 @@ import {
 import { log } from "./utils.js";
 
 const ADMIN_PIN = "2749";
+const SAVED_NAME_KEY = "almoco_saved_name";
 
 function init() {
   window.__APP_DEBUG__ = false;
@@ -45,6 +46,13 @@ function init() {
 
   const adminLogoutBtn = document.getElementById("admin-logout-btn");
   adminLogoutBtn.addEventListener("click", handleAdminLogout);
+
+  // Preencher nome salvo, se existir
+  const savedName = localStorage.getItem(SAVED_NAME_KEY) || "";
+  const nameInput = document.getElementById("order-name");
+  if (savedName && nameInput) {
+    nameInput.value = savedName;
+  }
 
   // Carregar dados iniciais
   const remembered = loadAdminRemembered();
@@ -100,14 +108,17 @@ function handleOrderSubmit(event) {
     return;
   }
 
-  const newOrder = addOrderForToday({ name, notes });
+  // Salvar nome para próximos acessos neste aparelho
+  localStorage.setItem(SAVED_NAME_KEY, name);
+
+  addOrderForToday({ name, notes });
   const orders = loadOrdersForToday();
   setState({ ordersForToday: orders });
 
   feedbackEl.textContent = "Seu pedido de almoço foi registrado para hoje. ✅";
   feedbackEl.classList.add("success");
 
-  nameInput.value = "";
+  // Mantém o nome preenchido; limpa apenas observações
   notesInput.value = "";
 }
 
@@ -145,6 +156,7 @@ function handleMenuSubmit(event) {
   const sidesInput = document.getElementById("menu-sides");
   const veggieInput = document.getElementById("menu-veggie");
   const priceInput = document.getElementById("menu-price");
+  const deadlineInput = document.getElementById("menu-deadline");
   const notesInput = document.getElementById("menu-notes");
   const feedbackEl = document.getElementById("menu-save-feedback");
 
@@ -155,6 +167,7 @@ function handleMenuSubmit(event) {
   const sides = sidesInput.value.trim();
   const veggie = veggieInput.value.trim();
   const price = Number(priceInput.value);
+  const deadline = deadlineInput.value;
   const notes = notesInput.value.trim();
 
   if (!mainDish || !sides || !Number.isFinite(price) || price < 0) {
@@ -168,6 +181,7 @@ function handleMenuSubmit(event) {
     sides,
     veggie: veggie || "",
     price,
+    deadline: deadline || "",
     notes: notes || "",
   };
 
@@ -191,6 +205,15 @@ function handleAdminLogout() {
   setState({ isAdmin: false, adminRemembered: false });
 }
 
+function formatTimeFromISO(isoString) {
+  if (!isoString) return "—";
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return "—";
+  const h = String(d.getHours()).padStart(2, "0");
+  const m = String(d.getMinutes()).padStart(2, "0");
+  return `${h}:${m}`;
+}
+
 function render(state) {
   // Tabs
   const tabAlmocarBtn = document.getElementById("tab-almocar-btn");
@@ -209,12 +232,13 @@ function render(state) {
   if (!state.menuForToday) {
     menuContent.innerHTML = '<p class="muted">Ainda não há cardápio registrado para hoje.</p>';
   } else {
-    const { mainDish, sides, veggie, price, notes } = state.menuForToday;
+    const { mainDish, sides, veggie, price, notes, deadline } = state.menuForToday;
     menuContent.innerHTML = `
       <p><strong>Prato principal:</strong> ${mainDish}</p>
       <p><strong>Acompanhamentos:</strong> ${sides}</p>
       ${veggie ? `<p><strong>Opção vegetariana:</strong> ${veggie}</p>` : ""}
       <p><strong>Valor:</strong> R$ ${price.toFixed(2)}</p>
+      ${deadline ? `<p><strong>Horário limite para pedidos:</strong> ${deadline}</p>` : ""}
       ${notes ? `<p><strong>Observações:</strong> ${notes}</p>` : ""}
     `;
   }
@@ -236,6 +260,7 @@ function render(state) {
   const sidesInput = document.getElementById("menu-sides");
   const veggieInput = document.getElementById("menu-veggie");
   const priceInput = document.getElementById("menu-price");
+  const deadlineInput = document.getElementById("menu-deadline");
   const notesInput = document.getElementById("menu-notes");
 
   if (state.menuForToday) {
@@ -243,12 +268,14 @@ function render(state) {
     sidesInput.value = state.menuForToday.sides || "";
     veggieInput.value = state.menuForToday.veggie || "";
     priceInput.value = state.menuForToday.price ?? "";
+    deadlineInput.value = state.menuForToday.deadline || "";
     notesInput.value = state.menuForToday.notes || "";
   } else {
     mainDishInput.value = "";
     sidesInput.value = "";
     veggieInput.value = "";
     priceInput.value = "";
+    deadlineInput.value = "";
     notesInput.value = "";
   }
 
@@ -272,6 +299,10 @@ function render(state) {
     const nameTd = document.createElement("td");
     nameTd.textContent = order.name;
     tr.appendChild(nameTd);
+
+    const timeTd = document.createElement("td");
+    timeTd.textContent = formatTimeFromISO(order.createdAt);
+    tr.appendChild(timeTd);
 
     const notesTd = document.createElement("td");
     notesTd.textContent = order.notes || "—";

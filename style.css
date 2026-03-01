@@ -57,16 +57,17 @@ body {
 }
 
 .tabs {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px;
-  background: rgba(15, 23, 42, 0.9);
-  border-radius: 999px;
-  border: 1px solid var(--border-subtle);
+  justify-content: space-between;
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  gap: 0;
 }
 
 .tab-button {
+  flex: 1;
   border: none;
   padding: 6px 14px;
   border-radius: 999px;
@@ -75,6 +76,14 @@ body {
   font-size: 0.9rem;
   cursor: pointer;
   transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+}
+
+.tab-button:first-child {
+  margin-right: auto;
+}
+
+.tab-button:last-child {
+  margin-left: auto;
 }
 
 .tab-button.active {
@@ -125,7 +134,8 @@ label {
 
 input[type="text"],
 input[type="number"],
-input[type="password"] {
+input[type="password"],
+input[type="time"] {
   width: 100%;
   padding: 8px 10px;
   margin-bottom: 10px;
@@ -193,6 +203,14 @@ input:focus {
 .small-btn {
   padding: 6px 12px;
   font-size: 0.8rem;
+}
+
+.button-row {
+  display: flex;
+}
+
+.button-row.center {
+  justify-content: center;
 }
 
 .checkbox-label {
@@ -279,8 +297,6 @@ tr:last-child td {
 
 .cozinha-actions {
   margin-top: 10px;
-  display: flex;
-  justify-content: flex-end;
 }
 
 .hidden {
