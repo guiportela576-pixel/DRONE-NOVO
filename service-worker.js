@@ -1,6 +1,6 @@
 // service-worker.js
 
-const CACHE_NAME = "app-almoco-cache-v2";
+const CACHE_NAME = "app-almoco-cache-v4";
 const ASSETS_TO_CACHE = [
   "./",
   "./index.html",

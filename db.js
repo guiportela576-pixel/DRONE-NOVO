@@ -2,7 +2,7 @@
 
 import { getTodayKey, safeJsonParse, generateId, log } from "./utils.js";
 
-const STORAGE_VERSION = "v1";
+const STORAGE_VERSION = "v2";
 const MENU_KEY_PREFIX = `almoco_menu_${STORAGE_VERSION}_`;
 const ORDERS_KEY_PREFIX = `almoco_orders_${STORAGE_VERSION}_`;
 const ADMIN_REMEMBER_KEY = `almoco_admin_remember_${STORAGE_VERSION}`;
@@ -43,13 +43,13 @@ export function saveOrdersForToday(orders) {
   log("Pedidos salvos:", orders);
 }
 
-export function addOrderForToday({ name, notes }) {
+export function addOrderForToday({ name }) {
   const orders = loadOrdersForToday();
   const now = new Date().toISOString();
   const newOrder = {
     id: generateId("order"),
     name,
-    notes: notes || "",
+    notes: "",
     createdAt: now,
     paid: false,
   };

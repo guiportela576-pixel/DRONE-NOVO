@@ -50,8 +50,10 @@ function init() {
   // Preencher nome salvo, se existir
   const savedName = localStorage.getItem(SAVED_NAME_KEY) || "";
   const nameInput = document.getElementById("order-name");
-  if (savedName && nameInput) {
+  const rememberNameCheckbox = document.getElementById("remember-name");
+  if (savedName && nameInput && rememberNameCheckbox) {
     nameInput.value = savedName;
+    rememberNameCheckbox.checked = true;
   }
 
   // Carregar dados iniciais
@@ -97,10 +99,9 @@ function handleOrderSubmit(event) {
   }
 
   const nameInput = document.getElementById("order-name");
-  const notesInput = document.getElementById("order-notes");
+  const rememberNameCheckbox = document.getElementById("remember-name");
 
   const name = nameInput.value.trim();
-  const notes = notesInput.value.trim();
 
   if (!name) {
     feedbackEl.textContent = "Por favor, preencha seu nome.";
@@ -108,18 +109,19 @@ function handleOrderSubmit(event) {
     return;
   }
 
-  // Salvar nome para próximos acessos neste aparelho
-  localStorage.setItem(SAVED_NAME_KEY, name);
+  // Salvar ou limpar nome conforme checkbox
+  if (rememberNameCheckbox && rememberNameCheckbox.checked) {
+    localStorage.setItem(SAVED_NAME_KEY, name);
+  } else {
+    localStorage.removeItem(SAVED_NAME_KEY);
+  }
 
-  addOrderForToday({ name, notes });
+  addOrderForToday({ name });
   const orders = loadOrdersForToday();
   setState({ ordersForToday: orders });
 
   feedbackEl.textContent = "Seu pedido de almoço foi registrado para hoje. ✅";
   feedbackEl.classList.add("success");
-
-  // Mantém o nome preenchido; limpa apenas observações
-  notesInput.value = "";
 }
 
 function handleAdminPinSubmit(event) {
@@ -154,7 +156,6 @@ function handleMenuSubmit(event) {
   event.preventDefault();
   const mainDishInput = document.getElementById("menu-main-dish");
   const sidesInput = document.getElementById("menu-sides");
-  const veggieInput = document.getElementById("menu-veggie");
   const priceInput = document.getElementById("menu-price");
   const deadlineInput = document.getElementById("menu-deadline");
   const notesInput = document.getElementById("menu-notes");
@@ -165,7 +166,6 @@ function handleMenuSubmit(event) {
 
   const mainDish = mainDishInput.value.trim();
   const sides = sidesInput.value.trim();
-  const veggie = veggieInput.value.trim();
   const price = Number(priceInput.value);
   const deadline = deadlineInput.value;
   const notes = notesInput.value.trim();
@@ -179,7 +179,6 @@ function handleMenuSubmit(event) {
   const menu = {
     mainDish,
     sides,
-    veggie: veggie || "",
     price,
     deadline: deadline || "",
     notes: notes || "",
@@ -232,11 +231,10 @@ function render(state) {
   if (!state.menuForToday) {
     menuContent.innerHTML = '<p class="muted">Ainda não há cardápio registrado para hoje.</p>';
   } else {
-    const { mainDish, sides, veggie, price, notes, deadline } = state.menuForToday;
+    const { mainDish, sides, price, notes, deadline } = state.menuForToday;
     menuContent.innerHTML = `
       <p><strong>Prato principal:</strong> ${mainDish}</p>
       <p><strong>Acompanhamentos:</strong> ${sides}</p>
-      ${veggie ? `<p><strong>Opção vegetariana:</strong> ${veggie}</p>` : ""}
       <p><strong>Valor:</strong> R$ ${price.toFixed(2)}</p>
       ${deadline ? `<p><strong>Horário limite para pedidos:</strong> ${deadline}</p>` : ""}
       ${notes ? `<p><strong>Observações:</strong> ${notes}</p>` : ""}
@@ -258,7 +256,6 @@ function render(state) {
   // Aba Cozinha - preencher formulário de menu com dados atuais (se tiver)
   const mainDishInput = document.getElementById("menu-main-dish");
   const sidesInput = document.getElementById("menu-sides");
-  const veggieInput = document.getElementById("menu-veggie");
   const priceInput = document.getElementById("menu-price");
   const deadlineInput = document.getElementById("menu-deadline");
   const notesInput = document.getElementById("menu-notes");
@@ -266,14 +263,12 @@ function render(state) {
   if (state.menuForToday) {
     mainDishInput.value = state.menuForToday.mainDish || "";
     sidesInput.value = state.menuForToday.sides || "";
-    veggieInput.value = state.menuForToday.veggie || "";
     priceInput.value = state.menuForToday.price ?? "";
     deadlineInput.value = state.menuForToday.deadline || "";
     notesInput.value = state.menuForToday.notes || "";
   } else {
     mainDishInput.value = "";
     sidesInput.value = "";
-    veggieInput.value = "";
     priceInput.value = "";
     deadlineInput.value = "";
     notesInput.value = "";

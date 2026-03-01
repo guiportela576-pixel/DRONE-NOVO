@@ -1,11 +1,11 @@
 {
-  "name": "App de Almoço",
-  "short_name": "Almoço",
+  "name": "PREVISÃO DE ALMOÇO 6°BC",
+  "short_name": "Almoço 6°BC",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#020617",
   "theme_color": "#0f172a",
-  "description": "App simples para cardápio e pedidos de almoço no trabalho.",
+  "description": "App para previsão de almoço do 6°BC.",
   "icons": [
     {
       "src": "icon.png",
