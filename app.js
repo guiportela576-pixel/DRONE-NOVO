@@ -299,9 +299,6 @@ function render(state) {
     timeTd.textContent = formatTimeFromISO(order.createdAt);
     tr.appendChild(timeTd);
 
-    const notesTd = document.createElement("td");
-    notesTd.textContent = order.notes || "—";
-    tr.appendChild(notesTd);
 
     const paidTd = document.createElement("td");
     paidTd.className = "orders-paid-checkbox";
