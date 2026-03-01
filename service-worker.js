@@ -1,61 +1,47 @@
-const CACHE_NAME = "relatorio-voo-ios-v34";
+// service-worker.js
+
+const CACHE_NAME = "app-almoco-cache-v1";
+const ASSETS_TO_CACHE = [
+  "./",
+  "./index.html",
+  "./style.css",
+  "./app.js",
+  "./db.js",
+  "./state.js",
+  "./utils.js",
+  "./manifest.json",
+  "./icon.png"
+];
 
 self.addEventListener("install", (event) => {
-  self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) =>
-      cache.addAll([
-        "./",
-        "./index.html",
-        "./style.css?v=39",
-        "./state.js?v=1",
-        "./utils.js?v=1",
-        "./db.js?v=1",
-        "./tests.js?v=1",
-        "./app.js?v=39",
-        "./manifest.json",
-        "./icon.png"
-      ])
-    )
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS_TO_CACHE))
   );
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : null))))
-      .then(() => self.clients.claim())
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys
+          .filter((key) => key !== CACHE_NAME)
+          .map((oldKey) => caches.delete(oldKey))
+      )
+    )
   );
 });
 
 self.addEventListener("fetch", (event) => {
-  const req = event.request;
-  if (req.method !== "GET") return;
-
-  if (req.headers.get("accept")?.includes("text/html")) {
-    event.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
-          return res;
-        })
-        .catch(() => caches.match(req))
-    );
-    return;
-  }
-
   event.respondWith(
-    caches.match(req).then((cached) => {
-      const fetchPromise = fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
-          return res;
+    caches.match(event.request).then((cachedResponse) => {
+      if (cachedResponse) {
+        return cachedResponse;
+      }
+      return fetch(event.request).catch(() =>
+        new Response("Você está offline.", {
+          headers: { "Content-Type": "text/plain; charset=utf-8" },
         })
-        .catch(() => cached);
-
-      return cached || fetchPromise;
+      );
     })
   );
 });

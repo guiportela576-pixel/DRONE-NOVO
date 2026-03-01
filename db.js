@@ -1,88 +1,87 @@
-// IndexedDB KV store for Relatório de Voo (não altera layout/funcionalidades)
-// Objetivo: substituir flightReports do localStorage por IndexedDB, com migração automática e backup.
+// db.js
 
-const RV_IDB = (() => {
-  const DB_NAME = "relatorio_voo_db";
-  const DB_VERSION = 1;
-  const STORE = "kv";
+import { getTodayKey, safeJsonParse, generateId, log } from "./utils.js";
 
-  let _db = null;
+const STORAGE_VERSION = "v1";
+const MENU_KEY_PREFIX = `almoco_menu_${STORAGE_VERSION}_`;
+const ORDERS_KEY_PREFIX = `almoco_orders_${STORAGE_VERSION}_`;
+const ADMIN_REMEMBER_KEY = `almoco_admin_remember_${STORAGE_VERSION}`;
 
-  function _open(){
-    if (_db) return Promise.resolve(_db);
-    return new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, DB_VERSION);
-      req.onerror = () => reject(req.error || new Error("Falha ao abrir IndexedDB"));
-      req.onupgradeneeded = () => {
-        const db = req.result;
-        if (!db.objectStoreNames.contains(STORE)){
-          db.createObjectStore(STORE, { keyPath: "key" });
-        }
-      };
-      req.onsuccess = () => {
-        _db = req.result;
-        resolve(_db);
-      };
-    });
+function getMenuKeyForToday() {
+  return MENU_KEY_PREFIX + getTodayKey();
+}
+
+function getOrdersKeyForToday() {
+  return ORDERS_KEY_PREFIX + getTodayKey();
+}
+
+export function loadMenuForToday() {
+  const key = getMenuKeyForToday();
+  const raw = localStorage.getItem(key);
+  const menu = safeJsonParse(raw, null);
+  log("Menu carregado:", menu);
+  return menu;
+}
+
+export function saveMenuForToday(menu) {
+  const key = getMenuKeyForToday();
+  localStorage.setItem(key, JSON.stringify(menu));
+  log("Menu salvo:", menu);
+}
+
+export function loadOrdersForToday() {
+  const key = getOrdersKeyForToday();
+  const raw = localStorage.getItem(key);
+  const orders = safeJsonParse(raw, []);
+  log("Pedidos carregados:", orders);
+  return orders;
+}
+
+export function saveOrdersForToday(orders) {
+  const key = getOrdersKeyForToday();
+  localStorage.setItem(key, JSON.stringify(orders));
+  log("Pedidos salvos:", orders);
+}
+
+export function addOrderForToday({ name, notes }) {
+  const orders = loadOrdersForToday();
+  const now = new Date().toISOString();
+  const newOrder = {
+    id: generateId("order"),
+    name,
+    notes: notes || "",
+    createdAt: now,
+    paid: false,
+  };
+  orders.push(newOrder);
+  saveOrdersForToday(orders);
+  return newOrder;
+}
+
+export function updateOrderPaid(orderId, paid) {
+  const orders = loadOrdersForToday();
+  const idx = orders.findIndex((o) => o.id === orderId);
+  if (idx === -1) return null;
+  orders[idx] = { ...orders[idx], paid: !!paid };
+  saveOrdersForToday(orders);
+  return orders[idx];
+}
+
+export function clearOrdersForToday() {
+  const key = getOrdersKeyForToday();
+  localStorage.removeItem(key);
+  log("Pedidos de hoje limpos.");
+}
+
+export function loadAdminRemembered() {
+  const value = localStorage.getItem(ADMIN_REMEMBER_KEY);
+  return value === "1";
+}
+
+export function saveAdminRemembered(remembered) {
+  if (remembered) {
+    localStorage.setItem(ADMIN_REMEMBER_KEY, "1");
+  } else {
+    localStorage.removeItem(ADMIN_REMEMBER_KEY);
   }
-
-  async function get(key){
-    const db = await _open();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, "readonly");
-      const store = tx.objectStore(STORE);
-      const req = store.get(key);
-      req.onerror = () => reject(req.error || new Error("Falha ao ler IndexedDB"));
-      req.onsuccess = () => resolve(req.result ? req.result.value : null);
-    });
-  }
-
-  async function set(key, value){
-    const db = await _open();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, "readwrite");
-      const store = tx.objectStore(STORE);
-      const req = store.put({ key, value });
-      req.onerror = () => reject(req.error || new Error("Falha ao gravar IndexedDB"));
-      req.onsuccess = () => resolve(true);
-    });
-  }
-
-  async function del(key){
-    const db = await _open();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, "readwrite");
-      const store = tx.objectStore(STORE);
-      const req = store.delete(key);
-      req.onerror = () => reject(req.error || new Error("Falha ao apagar IndexedDB"));
-      req.onsuccess = () => resolve(true);
-    });
-  }
-
-  async function migrateFlightReportsFromLocalStorage(){
-    try{
-      const existing = await get("flightReports");
-      if (Array.isArray(existing)) return existing;
-
-      const raw = localStorage.getItem("flightReports");
-      if (!raw) return [];
-
-      let parsed = [];
-      try { parsed = JSON.parse(raw) || []; } catch { parsed = []; }
-      if (!Array.isArray(parsed)) parsed = [];
-
-      // grava no IndexedDB e mantém backup no localStorage (segurança)
-      await set("flightReports", parsed);
-      localStorage.setItem("flightReports_idb_migrated", "1");
-
-      return parsed;
-    }catch{
-      // se IndexedDB falhar, mantém comportamento antigo
-      let parsed = [];
-      try { parsed = JSON.parse(localStorage.getItem("flightReports")) || []; } catch { parsed = []; }
-      return Array.isArray(parsed) ? parsed : [];
-    }
-  }
-
-  return { get, set, del, migrateFlightReportsFromLocalStorage };
-})();
+}

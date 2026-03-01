@@ -1,14 +1,15 @@
 {
-  "name": "Relatório de Voo",
-  "short_name": "Relatório",
-  "start_url": "./index.html",
+  "name": "App de Almoço",
+  "short_name": "Almoço",
+  "start_url": ".",
   "display": "standalone",
-  "background_color": "#05070c",
-  "theme_color": "#05070c",
+  "background_color": "#020617",
+  "theme_color": "#0f172a",
+  "description": "App simples para cardápio e pedidos de almoço no trabalho.",
   "icons": [
     {
       "src": "icon.png",
-      "sizes": "180x180",
+      "sizes": "512x512",
       "type": "image/png"
     }
   ]
