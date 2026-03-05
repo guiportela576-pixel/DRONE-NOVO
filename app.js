@@ -59,8 +59,9 @@ function init() {
   // Carrega dados iniciais
   refreshAll().catch((err) => showGlobalError(err));
 
-  // Mantém o cardápio atualizado para todos os aparelhos
+  // Começa atualizando o cardápio automaticamente (aba Almoçar)
   startMenuPolling();
+
 
   // Service worker
   if ("serviceWorker" in navigator) {
@@ -79,10 +80,17 @@ function switchTab(tab) {
   const state = getState();
   if (tab === "cozinha" && state.isAdmin) {
     ensureRealtime();
+    // enquanto o cozinheiro está editando, não fica sobrescrevendo o formulário
+    stopMenuPolling();
   } else {
     stopOrdersPolling();
   }
+
+  // no modo Almoçar, mantém o cardápio sempre atualizado
+  if (tab === "almocar") startMenuPolling();
+  else stopMenuPolling();
 }
+
 
 function ensureRealtime() {
   // Fallback: atualiza a lista a cada 5s (ajuda em alguns navegadores/celulares)
@@ -321,13 +329,22 @@ function render(state) {
     cozinhaPanel.classList.add("hidden");
   }
 
-  // Cozinha - preencher menu
-  const mainDishInput = document.getElementById("menu-main-dish");
-  const sidesInput = document.getElementById("menu-sides");
-  const priceInput = document.getElementById("menu-price");
-  const deadlineInput = document.getElementById("menu-deadline");
-  const notesInput = document.getElementById("menu-notes");
+// Cozinha - preencher menu (não sobrescrever enquanto o usuário está digitando)
+const mainDishInput = document.getElementById("menu-main-dish");
+const sidesInput = document.getElementById("menu-sides");
+const priceInput = document.getElementById("menu-price");
+const deadlineInput = document.getElementById("menu-deadline");
+const notesInput = document.getElementById("menu-notes");
 
+const focused = document.activeElement;
+const isEditingMenu =
+  focused === mainDishInput ||
+  focused === sidesInput ||
+  focused === priceInput ||
+  focused === deadlineInput ||
+  focused === notesInput;
+
+if (!isEditingMenu) {
   if (state.menuForToday) {
     mainDishInput.value = state.menuForToday.mainDish || "";
     sidesInput.value = state.menuForToday.sides || "";
@@ -341,6 +358,7 @@ function render(state) {
     deadlineInput.value = "";
     notesInput.value = "";
   }
+}
 
   // Cozinha - pedidos
   const ordersSummary = document.getElementById("orders-summary");
@@ -391,7 +409,7 @@ function setFeedback(el, text, type) {
 function humanizeDbError(err) {
   const msg = err?.message || String(err);
   if (msg.includes("Credenciais do Supabase")) return msg;
-  return "Erro ao acessar o banco. Verifique internet e configuração do Supabase.";
+  return msg || "Erro ao acessar o banco. Verifique internet e configuração do Supabase.";
 }
 
 function showGlobalError(err) {
