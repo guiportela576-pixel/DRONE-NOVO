@@ -13,8 +13,8 @@ import { getTodayKey, log } from "./utils.js";
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 // COLE AQUI
-export const SUPABASE_URL = "COLE_AQUI_SEU_SUPABASE_URL";
-export const SUPABASE_ANON_KEY = "COLE_AQUI_SUA_SUPABASE_ANON_KEY";
+export const SUPABASE_URL = "https://gqhdvejokmxrnhwufvcr.supabase.co";
+export const SUPABASE_ANON_KEY = "sb_publishable_ceijZvFmzxx2xzSDb3rMKA_QFRbU5xn";
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
 let supabase = null;
