@@ -1,77 +1,169 @@
-// db.js
+// db.js (Supabase)
+// Cole suas credenciais aqui:
+//
+// 1) SUPABASE_URL: Project URL (Settings > API)
+// 2) SUPABASE_ANON_KEY: anon/publishable key (Settings > API)
+//
+// Docs:
+// - createClient: https://supabase.com/docs/reference/javascript/initializing
+// - Realtime Postgres Changes: https://supabase.com/docs/guides/realtime/postgres-changes
 
-import { getTodayKey, safeJsonParse, generateId, log } from "./utils.js";
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+import { getTodayKey, log } from "./utils.js";
 
-const STORAGE_VERSION = "v2";
-const MENU_KEY_PREFIX = `almoco_menu_${STORAGE_VERSION}_`;
-const ORDERS_KEY_PREFIX = `almoco_orders_${STORAGE_VERSION}_`;
-const ADMIN_REMEMBER_KEY = `almoco_admin_remember_${STORAGE_VERSION}`;
+// >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+// COLE AQUI
+export const SUPABASE_URL = "COLE_AQUI_SEU_SUPABASE_URL";
+export const SUPABASE_ANON_KEY = "COLE_AQUI_SUA_SUPABASE_ANON_KEY";
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
-function getMenuKeyForToday() {
-  return MENU_KEY_PREFIX + getTodayKey();
+let supabase = null;
+
+export function getSupabaseClient() {
+  if (supabase) return supabase;
+
+  if (
+    !SUPABASE_URL ||
+    !SUPABASE_ANON_KEY ||
+    SUPABASE_URL.includes("COLE_AQUI") ||
+    SUPABASE_ANON_KEY.includes("COLE_AQUI")
+  ) {
+    throw new Error(
+      "Credenciais do Supabase não configuradas em db.js (SUPABASE_URL / SUPABASE_ANON_KEY)."
+    );
+  }
+
+  supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  return supabase;
 }
 
-function getOrdersKeyForToday() {
-  return ORDERS_KEY_PREFIX + getTodayKey();
-}
+export async function loadMenuForToday() {
+  const dateKey = getTodayKey();
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from("menu")
+    .select("*")
+    .eq("date_key", dateKey)
+    .maybeSingle();
 
-export function loadMenuForToday() {
-  const key = getMenuKeyForToday();
-  const raw = localStorage.getItem(key);
-  const menu = safeJsonParse(raw, null);
-  log("Menu carregado:", menu);
-  return menu;
-}
+  if (error) throw error;
+  if (!data) return null;
 
-export function saveMenuForToday(menu) {
-  const key = getMenuKeyForToday();
-  localStorage.setItem(key, JSON.stringify(menu));
-  log("Menu salvo:", menu);
-}
-
-export function loadOrdersForToday() {
-  const key = getOrdersKeyForToday();
-  const raw = localStorage.getItem(key);
-  const orders = safeJsonParse(raw, []);
-  log("Pedidos carregados:", orders);
-  return orders;
-}
-
-export function saveOrdersForToday(orders) {
-  const key = getOrdersKeyForToday();
-  localStorage.setItem(key, JSON.stringify(orders));
-  log("Pedidos salvos:", orders);
-}
-
-export function addOrderForToday({ name }) {
-  const orders = loadOrdersForToday();
-  const now = new Date().toISOString();
-  const newOrder = {
-    id: generateId("order"),
-    name,
-    notes: "",
-    createdAt: now,
-    paid: false,
+  return {
+    mainDish: data.main_dish || "",
+    sides: data.sides || "",
+    price: Number(data.price ?? 0),
+    deadline: data.deadline || "",
+    notes: data.notes || "",
   };
-  orders.push(newOrder);
-  saveOrdersForToday(orders);
-  return newOrder;
 }
 
-export function updateOrderPaid(orderId, paid) {
-  const orders = loadOrdersForToday();
-  const idx = orders.findIndex((o) => o.id === orderId);
-  if (idx === -1) return null;
-  orders[idx] = { ...orders[idx], paid: !!paid };
-  saveOrdersForToday(orders);
-  return orders[idx];
+export async function saveMenuForToday(menu) {
+  const dateKey = getTodayKey();
+  const client = getSupabaseClient();
+  const payload = {
+    date_key: dateKey,
+    main_dish: menu.mainDish,
+    sides: menu.sides,
+    price: menu.price,
+    deadline: menu.deadline || "",
+    notes: menu.notes || "",
+  };
+
+  const { error } = await client.from("menu").upsert(payload, { onConflict: "date_key" });
+  if (error) throw error;
 }
 
-export function clearOrdersForToday() {
-  const key = getOrdersKeyForToday();
-  localStorage.removeItem(key);
-  log("Pedidos de hoje limpos.");
+export async function loadOrdersForToday() {
+  const dateKey = getTodayKey();
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from("orders")
+    .select("*")
+    .eq("date_key", dateKey)
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+
+  return (data || []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    createdAt: row.created_at,
+    paid: !!row.paid,
+  }));
 }
+
+export async function addOrderForToday({ name }) {
+  const dateKey = getTodayKey();
+  const client = getSupabaseClient();
+
+  const { data, error } = await client
+    .from("orders")
+    .insert({ date_key: dateKey, name })
+    .select("*")
+    .single();
+
+  if (error) throw error;
+
+  return {
+    id: data.id,
+    name: data.name,
+    createdAt: data.created_at,
+    paid: !!data.paid,
+  };
+}
+
+export async function updateOrderPaid(orderId, paid) {
+  const client = getSupabaseClient();
+  const { data, error } = await client
+    .from("orders")
+    .update({ paid: !!paid })
+    .eq("id", orderId)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+
+  return {
+    id: data.id,
+    name: data.name,
+    createdAt: data.created_at,
+    paid: !!data.paid,
+  };
+}
+
+export async function clearOrdersForToday() {
+  const dateKey = getTodayKey();
+  const client = getSupabaseClient();
+  const { error } = await client.from("orders").delete().eq("date_key", dateKey);
+  if (error) throw error;
+}
+
+// Realtime subscription for today's orders
+export function subscribeOrdersForToday(onChange) {
+  const dateKey = getTodayKey();
+  const client = getSupabaseClient();
+
+  const channel = client
+    .channel("orders-today")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "orders", filter: `date_key=eq.${dateKey}` },
+      (payload) => {
+        log("Realtime payload:", payload);
+        onChange(payload);
+      }
+    )
+    .subscribe();
+
+  return () => {
+    client.removeChannel(channel);
+  };
+}
+
+// Admin remember remains local per device
+const STORAGE_VERSION = "supabase_v1";
+const ADMIN_REMEMBER_KEY = `almoco_admin_remember_${STORAGE_VERSION}`;
 
 export function loadAdminRemembered() {
   const value = localStorage.getItem(ADMIN_REMEMBER_KEY);

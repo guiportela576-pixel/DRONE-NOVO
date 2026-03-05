@@ -8,6 +8,7 @@ import {
   addOrderForToday,
   updateOrderPaid,
   clearOrdersForToday,
+  subscribeOrdersForToday,
   loadAdminRemembered,
   saveAdminRemembered,
 } from "./db.js";
@@ -16,38 +17,28 @@ import { log } from "./utils.js";
 const ADMIN_PIN = "2749";
 const SAVED_NAME_KEY = "almoco_saved_name";
 
+let unsubscribeRealtime = null;
+
 function init() {
   window.__APP_DEBUG__ = false;
 
   const yearEl = document.getElementById("year");
-  if (yearEl) {
-    yearEl.textContent = new Date().getFullYear();
-  }
+  if (yearEl) yearEl.textContent = new Date().getFullYear();
 
   // Tabs
   const tabAlmocarBtn = document.getElementById("tab-almocar-btn");
   const tabCozinhaBtn = document.getElementById("tab-cozinha-btn");
-
   tabAlmocarBtn.addEventListener("click", () => switchTab("almocar"));
   tabCozinhaBtn.addEventListener("click", () => switchTab("cozinha"));
 
   // Forms e botões
-  const orderForm = document.getElementById("order-form");
-  orderForm.addEventListener("submit", handleOrderSubmit);
+  document.getElementById("order-form").addEventListener("submit", handleOrderSubmit);
+  document.getElementById("admin-pin-form").addEventListener("submit", handleAdminPinSubmit);
+  document.getElementById("menu-form").addEventListener("submit", handleMenuSubmit);
+  document.getElementById("clear-orders-btn").addEventListener("click", handleClearOrders);
+  document.getElementById("admin-logout-btn").addEventListener("click", handleAdminLogout);
 
-  const adminPinForm = document.getElementById("admin-pin-form");
-  adminPinForm.addEventListener("submit", handleAdminPinSubmit);
-
-  const menuForm = document.getElementById("menu-form");
-  menuForm.addEventListener("submit", handleMenuSubmit);
-
-  const clearOrdersBtn = document.getElementById("clear-orders-btn");
-  clearOrdersBtn.addEventListener("click", handleClearOrders);
-
-  const adminLogoutBtn = document.getElementById("admin-logout-btn");
-  adminLogoutBtn.addEventListener("click", handleAdminLogout);
-
-  // Preencher nome salvo, se existir
+  // Nome salvo (opcional)
   const savedName = localStorage.getItem(SAVED_NAME_KEY) || "";
   const nameInput = document.getElementById("order-name");
   const rememberNameCheckbox = document.getElementById("remember-name");
@@ -56,72 +47,83 @@ function init() {
     rememberNameCheckbox.checked = true;
   }
 
-  // Carregar dados iniciais
   const remembered = loadAdminRemembered();
-  const menu = loadMenuForToday();
-  const orders = loadOrdersForToday();
+  setState({ adminRemembered: remembered, isAdmin: remembered });
 
-  setState({
-    adminRemembered: remembered,
-    isAdmin: remembered,
-    menuForToday: menu,
-    ordersForToday: orders,
-  });
-
-  // Inscrever renderizador
   subscribe(render);
   render(getState());
 
+  // Carrega dados iniciais via Supabase
+  refreshAll().catch((err) => showGlobalError(err));
+
   // Service worker
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker
-      .register("./service-worker.js")
-      .then(() => log("Service worker registrado."))
-      .catch((err) => console.error("Erro ao registrar service worker:", err));
+    navigator.serviceWorker.register("./service-worker.js").catch(() => {});
   }
+}
+
+async function refreshAll() {
+  const [menu, orders] = await Promise.all([loadMenuForToday(), loadOrdersForToday()]);
+  setState({ menuForToday: menu, ordersForToday: orders });
 }
 
 function switchTab(tab) {
   setState({ activeTab: tab });
+
+  const state = getState();
+  if (tab === "cozinha" && state.isAdmin) {
+    ensureRealtime();
+  }
 }
 
-function handleOrderSubmit(event) {
+function ensureRealtime() {
+  if (unsubscribeRealtime) return;
+  unsubscribeRealtime = subscribeOrdersForToday(async () => {
+    const orders = await loadOrdersForToday();
+    setState({ ordersForToday: orders });
+  });
+}
+
+function stopRealtime() {
+  if (unsubscribeRealtime) {
+    unsubscribeRealtime();
+    unsubscribeRealtime = null;
+  }
+}
+
+async function handleOrderSubmit(event) {
   event.preventDefault();
   const state = getState();
   const feedbackEl = document.getElementById("order-feedback");
-  feedbackEl.textContent = "";
-  feedbackEl.className = "feedback";
+  setFeedback(feedbackEl, "");
 
   if (!state.menuForToday) {
-    feedbackEl.textContent = "Ainda não há cardápio registrado para hoje.";
-    feedbackEl.classList.add("error");
+    setFeedback(feedbackEl, "Ainda não há cardápio registrado para hoje.", "error");
     return;
   }
 
   const nameInput = document.getElementById("order-name");
   const rememberNameCheckbox = document.getElementById("remember-name");
-
   const name = nameInput.value.trim();
 
   if (!name) {
-    feedbackEl.textContent = "Por favor, preencha seu nome.";
-    feedbackEl.classList.add("error");
+    setFeedback(feedbackEl, "Por favor, preencha seu nome.", "error");
     return;
   }
 
-  // Salvar ou limpar nome conforme checkbox
   if (rememberNameCheckbox && rememberNameCheckbox.checked) {
     localStorage.setItem(SAVED_NAME_KEY, name);
   } else {
     localStorage.removeItem(SAVED_NAME_KEY);
   }
 
-  addOrderForToday({ name });
-  const orders = loadOrdersForToday();
-  setState({ ordersForToday: orders });
-
-  feedbackEl.textContent = "Seu pedido de almoço foi registrado para hoje. ✅";
-  feedbackEl.classList.add("success");
+  try {
+    await addOrderForToday({ name });
+    // Atualiza a lista local (a cozinha atualiza via realtime; aqui é só feedback)
+    setFeedback(feedbackEl, "Seu pedido de almoço foi registrado para hoje. ✅", "success");
+  } catch (err) {
+    setFeedback(feedbackEl, humanizeDbError(err), "error");
+  }
 }
 
 function handleAdminPinSubmit(event) {
@@ -129,30 +131,26 @@ function handleAdminPinSubmit(event) {
   const pinInput = document.getElementById("admin-pin");
   const rememberCheckbox = document.getElementById("remember-admin");
   const feedbackEl = document.getElementById("admin-pin-feedback");
-
-  feedbackEl.textContent = "";
-  feedbackEl.className = "feedback";
+  setFeedback(feedbackEl, "");
 
   const value = pinInput.value.trim();
   if (value !== ADMIN_PIN) {
-    feedbackEl.textContent = "PIN incorreto.";
-    feedbackEl.classList.add("error");
+    setFeedback(feedbackEl, "PIN incorreto.", "error");
     return;
   }
 
   const remember = rememberCheckbox.checked;
   saveAdminRemembered(remember);
-  setState({
-    isAdmin: true,
-    adminRemembered: remember,
-  });
+  setState({ isAdmin: true, adminRemembered: remember });
 
-  feedbackEl.textContent = "Acesso liberado para a cozinha.";
-  feedbackEl.classList.add("success");
+  setFeedback(feedbackEl, "Acesso liberado para a cozinha.", "success");
   pinInput.value = "";
+
+  ensureRealtime();
+  refreshAll().catch(() => {});
 }
 
-function handleMenuSubmit(event) {
+async function handleMenuSubmit(event) {
   event.preventDefault();
   const mainDishInput = document.getElementById("menu-main-dish");
   const sidesInput = document.getElementById("menu-sides");
@@ -160,9 +158,7 @@ function handleMenuSubmit(event) {
   const deadlineInput = document.getElementById("menu-deadline");
   const notesInput = document.getElementById("menu-notes");
   const feedbackEl = document.getElementById("menu-save-feedback");
-
-  feedbackEl.textContent = "";
-  feedbackEl.className = "feedback";
+  setFeedback(feedbackEl, "");
 
   const mainDish = mainDishInput.value.trim();
   const sides = sidesInput.value.trim();
@@ -171,37 +167,36 @@ function handleMenuSubmit(event) {
   const notes = notesInput.value.trim();
 
   if (!mainDish || !sides || !Number.isFinite(price) || price < 0) {
-    feedbackEl.textContent = "Preencha os campos obrigatórios com valores válidos.";
-    feedbackEl.classList.add("error");
+    setFeedback(feedbackEl, "Preencha os campos obrigatórios com valores válidos.", "error");
     return;
   }
 
-  const menu = {
-    mainDish,
-    sides,
-    price,
-    deadline: deadline || "",
-    notes: notes || "",
-  };
+  const menu = { mainDish, sides, price, deadline: deadline || "", notes: notes || "" };
 
-  saveMenuForToday(menu);
-  setState({ menuForToday: menu });
-
-  feedbackEl.textContent = "Cardápio de hoje salvo com sucesso. ✅";
-  feedbackEl.classList.add("success");
+  try {
+    await saveMenuForToday(menu);
+    const fresh = await loadMenuForToday();
+    setState({ menuForToday: fresh });
+    setFeedback(feedbackEl, "Cardápio de hoje salvo com sucesso. ✅", "success");
+  } catch (err) {
+    setFeedback(feedbackEl, humanizeDbError(err), "error");
+  }
 }
 
-function handleClearOrders() {
-  if (!confirm("Tem certeza que deseja limpar todos os pedidos de hoje?")) {
-    return;
+async function handleClearOrders() {
+  if (!confirm("Tem certeza que deseja limpar todos os pedidos de hoje?")) return;
+  try {
+    await clearOrdersForToday();
+    setState({ ordersForToday: [] });
+  } catch (err) {
+    alert(humanizeDbError(err));
   }
-  clearOrdersForToday();
-  setState({ ordersForToday: [] });
 }
 
 function handleAdminLogout() {
   saveAdminRemembered(false);
   setState({ isAdmin: false, adminRemembered: false });
+  stopRealtime();
 }
 
 function formatTimeFromISO(isoString) {
@@ -215,33 +210,28 @@ function formatTimeFromISO(isoString) {
 
 function render(state) {
   // Tabs
-  const tabAlmocarBtn = document.getElementById("tab-almocar-btn");
-  const tabCozinhaBtn = document.getElementById("tab-cozinha-btn");
-  const almocarSection = document.getElementById("tab-almocar");
-  const cozinhaSection = document.getElementById("tab-cozinha");
+  document.getElementById("tab-almocar-btn").classList.toggle("active", state.activeTab === "almocar");
+  document.getElementById("tab-cozinha-btn").classList.toggle("active", state.activeTab === "cozinha");
 
-  tabAlmocarBtn.classList.toggle("active", state.activeTab === "almocar");
-  tabCozinhaBtn.classList.toggle("active", state.activeTab === "cozinha");
+  document.getElementById("tab-almocar").classList.toggle("active", state.activeTab === "almocar");
+  document.getElementById("tab-cozinha").classList.toggle("active", state.activeTab === "cozinha");
 
-  almocarSection.classList.toggle("active", state.activeTab === "almocar");
-  cozinhaSection.classList.toggle("active", state.activeTab === "cozinha");
-
-  // Aba Almoçar - cardápio
+  // Almoçar - menu
   const menuContent = document.getElementById("menu-content");
   if (!state.menuForToday) {
     menuContent.innerHTML = '<p class="muted">Ainda não há cardápio registrado para hoje.</p>';
   } else {
     const { mainDish, sides, price, notes, deadline } = state.menuForToday;
     menuContent.innerHTML = `
-      <p><strong>Prato principal:</strong> ${mainDish}</p>
-      <p><strong>Acompanhamentos:</strong> ${sides}</p>
-      <p><strong>Valor:</strong> R$ ${price.toFixed(2)}</p>
-      ${deadline ? `<p><strong>Horário limite para pedidos:</strong> ${deadline}</p>` : ""}
-      ${notes ? `<p><strong>Observações:</strong> ${notes}</p>` : ""}
+      <p><strong>Prato principal:</strong> ${escapeHtml(mainDish)}</p>
+      <p><strong>Acompanhamentos:</strong> ${escapeHtml(sides)}</p>
+      <p><strong>Valor:</strong> R$ ${Number(price).toFixed(2)}</p>
+      ${deadline ? `<p><strong>Horário limite para pedidos:</strong> ${escapeHtml(deadline)}</p>` : ""}
+      ${notes ? `<p><strong>Observações:</strong> ${escapeHtml(notes)}</p>` : ""}
     `;
   }
 
-  // Aba Cozinha - bloqueio por PIN
+  // Cozinha lock
   const cozinhaLocked = document.getElementById("cozinha-locked");
   const cozinhaPanel = document.getElementById("cozinha-panel");
 
@@ -253,7 +243,7 @@ function render(state) {
     cozinhaPanel.classList.add("hidden");
   }
 
-  // Aba Cozinha - preencher formulário de menu com dados atuais (se tiver)
+  // Cozinha - preencher menu
   const mainDishInput = document.getElementById("menu-main-dish");
   const sidesInput = document.getElementById("menu-sides");
   const priceInput = document.getElementById("menu-price");
@@ -274,19 +264,14 @@ function render(state) {
     notesInput.value = "";
   }
 
-  // Aba Cozinha - tabela de pedidos
+  // Cozinha - pedidos
   const ordersSummary = document.getElementById("orders-summary");
   const tbody = document.getElementById("orders-table-body");
   tbody.innerHTML = "";
 
   const orders = state.ordersForToday || [];
   const total = orders.length;
-
-  if (total === 0) {
-    ordersSummary.textContent = "Nenhum pedido registrado hoje.";
-  } else {
-    ordersSummary.textContent = `Total de pedidos hoje: ${total}`;
-  }
+  ordersSummary.textContent = total === 0 ? "Nenhum pedido registrado hoje." : `Total de pedidos hoje: ${total}`;
 
   orders.forEach((order) => {
     const tr = document.createElement("tr");
@@ -299,17 +284,17 @@ function render(state) {
     timeTd.textContent = formatTimeFromISO(order.createdAt);
     tr.appendChild(timeTd);
 
-
     const paidTd = document.createElement("td");
     paidTd.className = "orders-paid-checkbox";
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.checked = !!order.paid;
-    checkbox.addEventListener("change", () => {
-      const updated = updateOrderPaid(order.id, checkbox.checked);
-      if (updated) {
-        const refreshed = loadOrdersForToday();
-        setState({ ordersForToday: refreshed });
+    checkbox.addEventListener("change", async () => {
+      try {
+        await updateOrderPaid(order.id, checkbox.checked);
+      } catch (err) {
+        alert(humanizeDbError(err));
+        checkbox.checked = !checkbox.checked;
       }
     });
     paidTd.appendChild(checkbox);
@@ -317,6 +302,33 @@ function render(state) {
 
     tbody.appendChild(tr);
   });
+}
+
+function setFeedback(el, text, type) {
+  el.textContent = text || "";
+  el.className = "feedback";
+  if (type) el.classList.add(type);
+}
+
+function humanizeDbError(err) {
+  const msg = err?.message || String(err);
+  if (msg.includes("Credenciais do Supabase")) return msg;
+  return "Erro ao acessar o banco. Verifique internet e configuração do Supabase.";
+}
+
+function showGlobalError(err) {
+  console.error(err);
+  const el = document.getElementById("order-feedback");
+  if (el) setFeedback(el, humanizeDbError(err), "error");
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 document.addEventListener("DOMContentLoaded", init);
