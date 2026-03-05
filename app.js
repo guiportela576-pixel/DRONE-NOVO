@@ -4,6 +4,7 @@ import { getState, setState, subscribe } from "./state.js";
 import {
   loadMenuForToday,
   saveMenuForToday,
+  clearMenuForToday,
   loadOrdersForToday,
   addOrderForToday,
   updateOrderPaid,
@@ -12,12 +13,13 @@ import {
   loadAdminRemembered,
   saveAdminRemembered,
 } from "./db.js";
-import { log } from "./utils.js";
 
 const ADMIN_PIN = "2749";
 const SAVED_NAME_KEY = "almoco_saved_name";
 
 let unsubscribeRealtime = null;
+let ordersPollTimer = null;
+let menuPollTimer = null;
 
 function init() {
   window.__APP_DEBUG__ = false;
@@ -37,6 +39,7 @@ function init() {
   document.getElementById("menu-form").addEventListener("submit", handleMenuSubmit);
   document.getElementById("clear-orders-btn").addEventListener("click", handleClearOrders);
   document.getElementById("admin-logout-btn").addEventListener("click", handleAdminLogout);
+  document.getElementById("clear-menu-btn").addEventListener("click", handleClearMenu);
 
   // Nome salvo (opcional)
   const savedName = localStorage.getItem(SAVED_NAME_KEY) || "";
@@ -53,8 +56,11 @@ function init() {
   subscribe(render);
   render(getState());
 
-  // Carrega dados iniciais via Supabase
+  // Carrega dados iniciais
   refreshAll().catch((err) => showGlobalError(err));
+
+  // Mantém o cardápio atualizado para todos os aparelhos
+  startMenuPolling();
 
   // Service worker
   if ("serviceWorker" in navigator) {
@@ -73,14 +79,24 @@ function switchTab(tab) {
   const state = getState();
   if (tab === "cozinha" && state.isAdmin) {
     ensureRealtime();
+  } else {
+    stopOrdersPolling();
   }
 }
 
 function ensureRealtime() {
+  // Fallback: atualiza a lista a cada 5s (ajuda em alguns navegadores/celulares)
+  startOrdersPolling();
+
   if (unsubscribeRealtime) return;
+
   unsubscribeRealtime = subscribeOrdersForToday(async () => {
-    const orders = await loadOrdersForToday();
-    setState({ ordersForToday: orders });
+    try {
+      const orders = await loadOrdersForToday();
+      setState({ ordersForToday: orders });
+    } catch {
+      // Se falhar, o polling cobre
+    }
   });
 }
 
@@ -89,6 +105,46 @@ function stopRealtime() {
     unsubscribeRealtime();
     unsubscribeRealtime = null;
   }
+  stopOrdersPolling();
+}
+
+function startOrdersPolling() {
+  if (ordersPollTimer) return;
+  ordersPollTimer = setInterval(async () => {
+    try {
+      const orders = await loadOrdersForToday();
+      setState({ ordersForToday: orders });
+    } catch {
+      // silencioso
+    }
+  }, 5000);
+}
+
+function stopOrdersPolling() {
+  if (ordersPollTimer) {
+    clearInterval(ordersPollTimer);
+    ordersPollTimer = null;
+  }
+
+function startMenuPolling() {
+  if (menuPollTimer) return;
+  // Atualiza o cardápio automaticamente (para todo mundo ver mudanças sem recarregar)
+  menuPollTimer = setInterval(async () => {
+    try {
+      const menu = await loadMenuForToday();
+      setState({ menuForToday: menu });
+    } catch {
+      // silencioso
+    }
+  }, 7000);
+}
+
+function stopMenuPolling() {
+  if (menuPollTimer) {
+    clearInterval(menuPollTimer);
+    menuPollTimer = null;
+  }
+}
 }
 
 async function handleOrderSubmit(event) {
@@ -119,7 +175,6 @@ async function handleOrderSubmit(event) {
 
   try {
     await addOrderForToday({ name });
-    // Atualiza a lista local (a cozinha atualiza via realtime; aqui é só feedback)
     setFeedback(feedbackEl, "Seu pedido de almoço foi registrado para hoje. ✅", "success");
   } catch (err) {
     setFeedback(feedbackEl, humanizeDbError(err), "error");
@@ -190,6 +245,29 @@ async function handleClearOrders() {
     setState({ ordersForToday: [] });
   } catch (err) {
     alert(humanizeDbError(err));
+  }
+}
+
+
+async function handleClearMenu() {
+  if (!confirm("Tem certeza que deseja LIMPAR o cardápio de hoje?")) return;
+
+  const feedbackEl = document.getElementById("menu-save-feedback");
+  setFeedback(feedbackEl, "");
+
+  try {
+    await clearMenuForToday();
+    setState({ menuForToday: null });
+    // Limpa os campos na tela de cozinha
+    document.getElementById("menu-main-dish").value = "";
+    document.getElementById("menu-sides").value = "";
+    document.getElementById("menu-price").value = "";
+    document.getElementById("menu-deadline").value = "";
+    document.getElementById("menu-notes").value = "";
+
+    setFeedback(feedbackEl, "Cardápio de hoje removido. ✅", "success");
+  } catch (err) {
+    setFeedback(feedbackEl, humanizeDbError(err), "error");
   }
 }
 

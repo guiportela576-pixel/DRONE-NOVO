@@ -1,20 +1,17 @@
 // db.js (Supabase)
 // Cole suas credenciais aqui:
-//
 // 1) SUPABASE_URL: Project URL (Settings > API)
 // 2) SUPABASE_ANON_KEY: anon/publishable key (Settings > API)
 //
-// Docs:
-// - createClient: https://supabase.com/docs/reference/javascript/initializing
-// - Realtime Postgres Changes: https://supabase.com/docs/guides/realtime/postgres-changes
+// Esta versão usa Realtime (Postgres Changes) para a tabela "orders".
 
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 import { getTodayKey, log } from "./utils.js";
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 // COLE AQUI
-export const SUPABASE_URL = "https://gqhdvejokmxrnhwufvcr.supabase.co";
-export const SUPABASE_ANON_KEY = "sb_publishable_ceijZvFmzxx2xzSDb3rMKA_QFRbU5xn";
+export const SUPABASE_URL = "COLE_AQUI_SEU_SUPABASE_URL";
+export const SUPABASE_ANON_KEY = "COLE_AQUI_SUA_SUPABASE_ANON_KEY";
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
 let supabase = null;
@@ -71,6 +68,14 @@ export async function saveMenuForToday(menu) {
   };
 
   const { error } = await client.from("menu").upsert(payload, { onConflict: "date_key" });
+  if (error) throw error;
+}
+
+
+export async function clearMenuForToday() {
+  const dateKey = getTodayKey();
+  const client = getSupabaseClient();
+  const { error } = await client.from("menu").delete().eq("date_key", dateKey);
   if (error) throw error;
 }
 
@@ -161,8 +166,8 @@ export function subscribeOrdersForToday(onChange) {
   };
 }
 
-// Admin remember remains local per device
-const STORAGE_VERSION = "supabase_v1";
+// Admin remember permanece local no aparelho
+const STORAGE_VERSION = "supabase_v2";
 const ADMIN_REMEMBER_KEY = `almoco_admin_remember_${STORAGE_VERSION}`;
 
 export function loadAdminRemembered() {
@@ -171,9 +176,6 @@ export function loadAdminRemembered() {
 }
 
 export function saveAdminRemembered(remembered) {
-  if (remembered) {
-    localStorage.setItem(ADMIN_REMEMBER_KEY, "1");
-  } else {
-    localStorage.removeItem(ADMIN_REMEMBER_KEY);
-  }
+  if (remembered) localStorage.setItem(ADMIN_REMEMBER_KEY, "1");
+  else localStorage.removeItem(ADMIN_REMEMBER_KEY);
 }
